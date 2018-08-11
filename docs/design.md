@@ -24,3 +24,13 @@ It will also allow users to configure which branch(es) to keep updated (whether
 the user wants to update the `master`, `develop` branch, for example).
 
 ## Core functionality
+
+- Update git repositories
+  - Update any particular branch or multiple branches
+  - Allow for various ways to select which repositories should be updated
+    - By default, update all tracked repositories
+    - Use fuzzy matching or regular expressions to either include or
+      exclude repositories from being updated
+- Track which repositories and branches to update
+- Allow options to be configured through any serializable format, or from the
+  command line interface
