@@ -1,5 +1,7 @@
 # gitup
 
+[![Build Status](https://travis-ci.org/afnanenayet/gitup.svg?branch=master)](https://travis-ci.org/afnanenayet/gitup)
+
 ## Synopsis
 
 `gitup` is a tool to help you manage git repositories that you only consume.
