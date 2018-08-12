@@ -8,18 +8,21 @@ use std::result;
 use std::string::String;
 
 /// Update a repository given the path to the repo and the desired branch to update.
-pub fn update_repo(path: &PathBuf, branches: &Vec<String>) -> RepoResult<()> {
+/// The branches hashmap contains a mapping of branches to whether each branch should
+/// have any uncommitted work stashed before pulling.
+pub fn update_repo(path: &PathBuf, branches: &HashMap<String, bool>) -> RepoResult<()> {
+    // Can't update something that isn't a repo
     if !is_valid_repo(path) {
         // set all branches to have the `InvalidRepo` error, since it applies to
         // every potential branch
         let mut error_map: HashMap<String, ErrorType> = HashMap::new();
 
-        for branch in branches.into_iter() {
-            error_map.insert(branch.to_string(), ErrorType::InvalidRepo);
+        for pair in branches {
+            error_map.insert(pair.0.to_string(), ErrorType::InvalidRepo);
         }
-
         return Err(RepoError::new(error_map));
     }
+    panic!("Not implemented yet");  // TODO remove
     Ok(())
 }
 
@@ -35,9 +38,8 @@ fn is_valid_repo(path: &PathBuf) -> bool {
 /// Given a valid git repository, pull for a particular set of branches. If
 /// there are local changes that have not been committed, they will be stashed
 /// and popped after the git repository is updated.
-fn git_pull(path: &PathBuf, branch: &Vec<String>, should_stash: bool) -> Result<(), Box<Error>> {
-    panic!("Not implemented");
-    Ok(())
+fn git_pull(path: &PathBuf, branches: &HashMap<String, bool>) -> RepoResult<()> {
+    panic!("Not implemented");  // TODO remove
 }
 
 /// A convenience type for results. Short for `Result<T, RepoError>`
@@ -104,7 +106,8 @@ mod test {
     #[test]
     fn test_update_repo_invalid_repo() {
         let path = PathBuf::from("/");
-        let branches = vec![String::from("master")];
+        let mut branches = HashMap::new();
+        branches.insert(String::from("master"), true);
 
         match update_repo(&path, &branches) {
             Ok(_) => panic!("Woops!"),
