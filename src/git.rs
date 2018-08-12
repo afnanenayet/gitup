@@ -18,9 +18,7 @@ pub fn update_repo(path: &PathBuf, branches: &Vec<String>) -> RepoResult<()> {
             error_map.insert(branch.to_string(), ErrorType::InvalidRepo);
         }
 
-        // TODO: find a more elegant way to create the error
-        let error: RepoResult<()> = Err(RepoError::new(error_map));
-        return error;
+        return Err(RepoError::new(error_map));
     }
     Ok(())
 }
@@ -37,7 +35,7 @@ fn is_valid_repo(path: &PathBuf) -> bool {
 /// Given a valid git repository, pull for a particular set of branches. If
 /// there are local changes that have not been committed, they will be stashed
 /// and popped after the git repository is updated.
-fn git_pull(path: &PathBuf, branch: &Vec<&str>) -> Result<(), Box<Error>> {
+fn git_pull(path: &PathBuf, branch: &Vec<String>, should_stash: bool) -> Result<(), Box<Error>> {
     panic!("Not implemented");
     Ok(())
 }
