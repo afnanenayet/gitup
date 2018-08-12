@@ -2,6 +2,7 @@ use git2;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::result;
 use std::string::String;
@@ -17,7 +18,7 @@ pub fn update_repo(path: &PathBuf, branches: &Vec<String>) -> RepoResult<()> {
             error_map.insert(branch.to_string(), ErrorType::InvalidRepo);
         }
 
-        // TODO: a more elegant way to create the error
+        // TODO: find a more elegant way to create the error
         let error: RepoResult<()> = Err(RepoError::new(error_map));
         return error;
     }
@@ -44,7 +45,7 @@ fn git_pull(path: &PathBuf, branch: &Vec<&str>) -> Result<(), Box<Error>> {
 /// A convenience type for results. Short for `Result<T, RepoError>`
 type RepoResult<T> = result::Result<T, RepoError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RepoError {
     /// A mapping of which error occurred for each branch. These usually will be identical,
     /// but there can be different errors for each branch.
@@ -54,7 +55,7 @@ pub struct RepoError {
     pub details: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ErrorType {
     InvalidRepo,
     NetworkError,
@@ -86,4 +87,30 @@ impl Error for RepoError {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_is_valid_repo_valid() {
+        // Note: this assumes that the working directory is the root of the project directory
+        let path = PathBuf::from(".");
+        assert!(is_valid_repo(&path));
+    }
+
+    #[test]
+    fn test_is_valid_repo_invalid() {
+        let path = PathBuf::from("/");
+        assert!(!is_valid_repo(&path));
+    }
+
+    #[test]
+    fn test_update_repo_invalid_repo() {
+        let path = PathBuf::from("/");
+        let branches = vec![String::from("master")];
+
+        match update_repo(&path, &branches) {
+            Ok(_) => panic!("Woops!"),
+            Err(e) => assert!(e.error_map["master"] == ErrorType::InvalidRepo),
+        }
+    }
+}
