@@ -27,6 +27,8 @@ the user wants to update the `master`, `develop` branch, for example).
 
 - Update git repositories
   - Update any particular branch or multiple branches
+    - Ensure that only one instance of `gitup` is updating the branches at
+      any given moment
   - Allow for various ways to select which repositories should be updated
     - By default, update all tracked repositories
     - Use fuzzy matching or regular expressions to either include or
@@ -34,3 +36,34 @@ the user wants to update the `master`, `develop` branch, for example).
 - Track which repositories and branches to update
 - Allow options to be configured through any serializable format, or from the
   command line interface
+
+## Modules
+
+This is a more technical and specific description of how the codebase is
+organized.
+
+### `config`
+
+The `config` module defines the configuration structure, as well
+parsing/serialization/deserialization of the structure. It also defines a
+method for finding where the configuration file actually is. If no
+configuration is found, it will create a default config file.
+
+### `git_fn`
+
+This module serves as a wrapper for all git related operations. This is put in
+place to reduce complexity related to external libraries (suppose the git
+library is changed, or there is a breaking update to the crate), this way
+less code has to be modified with respect to external libraries.
+
+### `proc`
+
+The `proc` module exists for process management. It maintains locks and ensures
+that only one instance of `gitup` is running at any given moment. This prevents
+config files from being corrupted, or any issues with updating git repos.
+
+### `tui`
+
+This module manages all user facing communication, so that it can be contained
+in one module rather than be interspersed throughout the codebase. It will
+contain functions to manage output and command line arguments/flags.
