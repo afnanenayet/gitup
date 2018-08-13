@@ -22,14 +22,7 @@ pub fn git_credentials_callback(
     if cred_type.contains(git2::CredentialType::USERNAME) {
         return git2::Cred::username(user);
     } else {
-        //_cred.contains(git2::CredentialType::SSH_KEY) {
-        // let cred = git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME));
-        return git2::Cred::ssh_key(
-            username.unwrap_or("git"),
-            Some(&PathBuf::from("/Users/aenayet/.ssh/id_ed25519.pub")),
-            &PathBuf::from("/Users/aenayet/.ssh/d_ed25519"),
-            None,
-        );
+        return git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME));
     }
 }
 
