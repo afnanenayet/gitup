@@ -1,38 +1,53 @@
 use consts;
 use git2;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
-use std::fmt;
-use std::fmt::Display;
-use std::path::PathBuf;
+use std::fmt::{self, Display};
+use std::path::{self, Path, PathBuf};
 use std::result;
 use std::string::String;
 
-/// This function resolves the local git credential configuration so that libgit can properly
-/// access remote repositories.
-pub fn resolve_creds(
+/// Callback function for libgit2 that retrieves the proper credentials for a repository for
+/// remote access.
+pub fn git_credentials_callback(
     url: &str,
     username: Option<&str>,
-    _cred_type: git2::CredentialType,
+    cred_type: git2::CredentialType,
 ) -> Result<git2::Cred, git2::Error> {
-    // attempt to resolve *some* git configuration
-    let git_config = git2::Config::open_default().unwrap();
+    debug!("git credential callback activated");
+    debug!("credential type: {:?}", cred_type);
+    let user = username.unwrap_or(consts::DEFAULT_SSH_USERNAME);
 
-    // attempt to pull username/pass, fallback to ssh credentials
-    match git2::Cred::credential_helper(&git_config, url, username) {
-        Ok(cred) => Ok(cred),
-        Err(_) => {
-            git2::Cred::ssh_key_from_agent(username.unwrap_or_else(|| consts::DEFAULT_SSH_USERNAME))
-        }
+    if cred_type.contains(git2::CredentialType::USERNAME) {
+        return git2::Cred::username(user);
+    } else {
+        //_cred.contains(git2::CredentialType::SSH_KEY) {
+        // let cred = git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME));
+        return git2::Cred::ssh_key(
+            username.unwrap_or("git"),
+            Some(&PathBuf::from("/Users/aenayet/.ssh/id_ed25519.pub")),
+            &PathBuf::from("/Users/aenayet/.ssh/d_ed25519"),
+            None,
+        );
     }
 }
 
 /// Update a repository given the path to the repo and the desired branch to update.
 /// The branches hashmap contains a mapping of branches to whether each branch should
 /// have any uncommitted work stashed before pulling.
-pub fn update_repo(path: &PathBuf, branches: &HashMap<String, bool>) -> RepoResult<()> {
+pub fn update_repo(
+    path: &PathBuf,
+    remote: &str,
+    branches: &HashMap<String, bool>,
+) -> RepoResult<()> {
     // Can't update something that isn't a repo
     if !is_valid_repo(path) {
+        error!(
+            "invalid repo supplied at {}",
+            path.to_str().unwrap_or("(unknown)")
+        );
+
         // set all branches to have the `InvalidRepo` error, since it applies to
         // every potential branch
         let mut error_map: HashMap<String, ErrorType> = HashMap::new();
@@ -42,7 +57,14 @@ pub fn update_repo(path: &PathBuf, branches: &HashMap<String, bool>) -> RepoResu
         }
         return Err(RepoError::new(error_map));
     }
-    panic!("Not implemented yet"); // TODO remove
+
+    // If repo is valid, attempt to git pull on each branch
+    // We deref pair.1 because it's a pointer to a bool, and we want to pass
+    // a copy of the bool. pair.0 is a reference to a String, giving us a &str
+    for pair in branches {
+        debug!("starting to update {}/{}", remote, pair.0);
+        git_pull(path, remote, pair.0, *pair.1).unwrap();
+    }
     Ok(())
 }
 
@@ -60,16 +82,20 @@ fn is_valid_repo(path: &PathBuf) -> bool {
 /// and popped after the git repository is updated.
 fn git_pull(path: &PathBuf, remote: &str, branch: &str, stash: bool) -> Result<(), git2::Error> {
     let repo = git2::Repository::open(path)?;
-    let mut remote_repo = repo.find_remote(remote)?;
+    let mut upstream = repo.find_remote(remote)?;
 
     // set up authentication callbacks so that credentials can be resolved
     let mut cbs = git2::RemoteCallbacks::default();
-    cbs.credentials(&resolve_creds);
+    cbs.credentials(&git_credentials_callback);
 
     // set up the fetch to use the auth callback
     let mut fetch_opts = git2::FetchOptions::default();
     fetch_opts.remote_callbacks(cbs);
-    remote_repo.fetch(&[branch], Some(&mut fetch_opts), None)?;
+
+    debug!("(git pull): fetching {}/{}", remote, branch);
+    upstream
+        .fetch(&[branch], Some(&mut fetch_opts), None)
+        .unwrap();
     Ok(())
 }
 
@@ -105,7 +131,7 @@ impl RepoError {
     }
 }
 
-impl fmt::Display for RepoError {
+impl Display for RepoError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.error_map)
     }
@@ -140,20 +166,20 @@ mod test {
         let mut branches = HashMap::new();
         branches.insert(String::from("master"), true);
 
-        match update_repo(&path, &branches) {
+        match update_repo(&path, "origin", &branches) {
             Ok(_) => panic!("Woops!"),
             Err(e) => assert!(e.error_map["master"] == ErrorType::InvalidRepo),
         }
     }
 
     #[test]
-    fn test_resolve_creds() {
+    fn test_git_credentials() {
         let url = "git@github.com:afnanenayet/gitup.git";
-        let creds = resolve_creds(url, None, git2::CredentialType::DEFAULT);
-
+        let creds = git_credentials_callback(url, None, git2::CredentialType::SSH_KEY);
         assert!(creds.is_ok());
     }
 
+    // Note: method this test fixes is not working and will time out
     #[test]
     fn test_git_pull() {
         let path = PathBuf::from(".");
