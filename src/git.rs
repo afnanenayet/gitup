@@ -1,17 +1,16 @@
 use consts;
 use git2;
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
 use std::fmt::{self, Display};
-use std::path::{self, Path, PathBuf};
+use std::path::PathBuf;
 use std::result;
 use std::string::String;
 
 /// Callback function for libgit2 that retrieves the proper credentials for a repository for
 /// remote access.
 pub fn git_credentials_callback(
-    url: &str,
+    _url: &str,
     username: Option<&str>,
     cred_type: git2::CredentialType,
 ) -> Result<git2::Cred, git2::Error> {
@@ -20,9 +19,9 @@ pub fn git_credentials_callback(
     let user = username.unwrap_or(consts::DEFAULT_SSH_USERNAME);
 
     if cred_type.contains(git2::CredentialType::USERNAME) {
-        return git2::Cred::username(user);
+        git2::Cred::username(user)
     } else {
-        return git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME));
+        git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME))
     }
 }
 
@@ -116,11 +115,11 @@ pub enum ErrorType {
 impl RepoError {
     fn new(error_map: HashMap<String, ErrorType>) -> RepoError {
         let mut error = RepoError {
-            error_map: error_map,
+            error_map,
             details: String::new(),
         };
         error.details = format!("{:?}", error.error_map);
-        return error;
+        error
     }
 }
 
