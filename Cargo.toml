@@ -1,10 +1,10 @@
 [package]
 name = "gitup"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Afnan Enayet <afnan.enayet@gmail.com>"]
 
 [dependencies]
 git2 = "0.7"
 clap = "2.32"
-log = "0.4"
-env_logger = "0.5"
+log = "0.4.5"
+env_logger = "0.5.13"
