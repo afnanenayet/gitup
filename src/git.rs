@@ -1,28 +1,142 @@
-use consts;
 use git2;
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt::{self, Display};
 use std::path::PathBuf;
-use std::result;
+use std::env;
 use std::string::String;
+use errors::*;
 
-/// Callback function for libgit2 that retrieves the proper credentials for a repository for
-/// remote access.
-pub fn git_credentials_callback(
-    _url: &str,
-    username: Option<&str>,
-    cred_type: git2::CredentialType,
-) -> Result<git2::Cred, git2::Error> {
-    debug!("git credential callback activated");
-    debug!("credential type: {:?}", cred_type);
-    let user = username.unwrap_or(consts::DEFAULT_SSH_USERNAME);
+pub fn with_auth<T, F>(url: &str, cfg: &git2::Config, mut f: F) -> Result<T>
+where F: FnMut(&mut git2::Credentials) -> Result<T>,
+{
+    let mut cred_helper = git2::CredentialHelper::new(url);
+    cred_helper.config(cfg);
 
-    if cred_type.contains(git2::CredentialType::USERNAME) {
-        git2::Cred::username(user)
-    } else {
-        git2::Cred::ssh_key_from_agent(username.unwrap_or(consts::DEFAULT_SSH_USERNAME))
+    let mut ssh_uname_requested = false;
+    let mut cred_helper_bad = None;
+    let mut ssh_agent_attempts = Vec::new();
+    let mut any_attempts = false;
+    let mut tried_ssh_key = false;
+
+    let mut res = f(&mut |url, username, allowed| {
+        any_attempts = true;
+
+        if allowed.contains(git2::CredentialType::USERNAME) {
+            debug_assert!(username.is_none());
+            ssh_uname_requested = true;
+            return Err(git2::Error::from_str("Will attempt to authenticate with usernames later"));
+        }
+
+        if allowed.contains(git2::CredentialType::SSH_KEY) && !tried_ssh_key {
+            tried_ssh_key = true;
+            let username = username.unwrap();
+            ssh_agent_attempts.push(username.to_string());
+            return git2::Cred::ssh_key_from_agent(username);
+        }
+
+        if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+            let r = git2::Cred::credential_helper(cfg, url, username);
+            cred_helper_bad = Some(r.is_err());
+            return r;
+        }
+
+        if allowed.contains(git2::CredentialType::DEFAULT) {
+            return git2::Cred::default();
+        }
+
+        // if everything fails...
+        Err(git2::Error::from_str("no authentication available"))
+    });
+
+    if ssh_uname_requested {
+        let mut attempts = Vec::new();
+        attempts.push("git".to_string());
+
+        if let Ok(s) = env::var("USER").or_else(|_| env::var("USERNAME")) {
+            attempts.push(s);
+        }
+
+        if let Some(ref s) = cred_helper.username {
+            attempts.push(s.clone());
+        }
+
+        while let Some(s) = attempts.pop() {
+            // We should get `USERNAME` first, where we just return our attempt,
+            // and then after that we should get `SSH_KEY`. If the first attempt
+            // fails we'll get called again, but we don't have another option so
+            // we bail out.
+            let mut attempts = 0;
+            res = f(&mut |_url, username, allowed| {
+                if allowed.contains(git2::CredentialType::USERNAME) {
+                    return git2::Cred::username(&s);
+                }
+                if allowed.contains(git2::CredentialType::SSH_KEY) {
+                    debug_assert_eq!(Some(&s[..]), username);
+                    attempts += 1;
+                    if attempts == 1 {
+                        ssh_agent_attempts.push(s.to_string());
+                        return git2::Cred::ssh_key_from_agent(&s);
+                    }
+                }
+                Err(git2::Error::from_str("no authentication available"))
+            });
+
+            // If we made two attempts then that means:
+            //
+            // 1. A username was requested, we returned `s`.
+            // 2. An ssh key was requested, we returned to look up `s` in the
+            //    ssh agent.
+            // 3. For whatever reason that lookup failed, so we were asked again
+            //    for another mode of authentication.
+            //
+            // Essentially, if `attempts == 2` then in theory the only error was
+            // that this username failed to authenticate (e.g. no other network
+            // errors happened). Otherwise something else is funny so we bail
+            // out.
+            if attempts != 2 {
+                break;
+            }
+        }
     }
+    if res.is_ok() || !any_attempts {
+        return res.map_err(From::from);
+    }
+
+    // In the case of an authentication failure (where we tried something) then
+    // we try to give a more helpful error message about precisely what we
+    // tried.
+    let res = res.map_err(Error::from).chain_err(|| {
+        let mut msg = "failed to authenticate when downloading \
+                       repository"
+            .to_string();
+        if !ssh_agent_attempts.is_empty() {
+            let names = ssh_agent_attempts
+                .iter()
+                .map(|s| format!("`{}`", s))
+                .collect::<Vec<_>>()
+                .join(", ");
+            msg.push_str(&format!(
+                "\nattempted ssh-agent authentication, but \
+                 none of the usernames {} succeeded",
+                names
+            ));
+        }
+        if let Some(failed_cred_helper) = cred_helper_bad {
+            if failed_cred_helper {
+                msg.push_str(
+                    "\nattempted to find username/password via \
+                     git's `credential.helper` support, but failed",
+                );
+            } else {
+                msg.push_str(
+                    "\nattempted to find username/password via \
+                     `credential.helper`, but maybe the found \
+                     credentials were incorrect",
+                );
+            }
+        }
+        msg
+    })?;
+    Ok(res) // TODO put back the proper error chain
 }
 
 /// Update a repository given the path to the repo and the desired branch to update.
@@ -32,22 +146,13 @@ pub fn update_repo(
     path: &PathBuf,
     remote: &str,
     branches: &HashMap<String, bool>,
-) -> RepoResult<()> {
+) -> Result<()> {
     // Can't update something that isn't a repo
     if !is_valid_repo(path) {
-        error!(
+        bail!(
             "invalid repo supplied at {}",
             path.to_str().unwrap_or("(unknown)")
         );
-
-        // set all branches to have the `InvalidRepo` error, since it applies to
-        // every potential branch
-        let mut error_map: HashMap<String, ErrorType> = HashMap::new();
-
-        for pair in branches {
-            error_map.insert(pair.0.to_string(), ErrorType::InvalidRepo);
-        }
-        return Err(RepoError::new(error_map));
     }
 
     // If repo is valid, attempt to git pull on each branch
@@ -72,67 +177,30 @@ fn is_valid_repo(path: &PathBuf) -> bool {
 /// Given a valid git repository, pull for a particular branch. If
 /// there are local changes that have not been committed, they will be stashed
 /// and popped after the git repository is updated.
-fn git_pull(path: &PathBuf, remote: &str, branch: &str, stash: bool) -> Result<(), git2::Error> {
-    let repo = git2::Repository::open(path)?;
-    let mut upstream = repo.find_remote(remote)?;
+fn git_pull(path: &PathBuf, remote: &str, branch: &str, _stash: bool) -> Result<()> {
+    // set up all of the config stuff
+    let repo = git2::Repository::open(path).chain_err(|| "could not open git repo at supplied path")?;
+    let upstream = repo.find_remote(remote).chain_err(|| "failed to find remote for git repo")?;
+    let url = upstream.url().chain_err(|| "could not retrieve remote URL")?; 
+    let git_config = git2::Config::open_default().chain_err(|| "could not retrieve any git config")?;
 
-    // set up authentication callbacks so that credentials can be resolved
-    let mut cbs = git2::RemoteCallbacks::default();
-    cbs.credentials(&git_credentials_callback);
+    with_auth(url, &git_config, |f| {
+        // set up authentication callbacks so that credentials can be resolved
+        let mut cbs = git2::RemoteCallbacks::default();
+        cbs.credentials(f);
 
-    // set up the fetch to use the auth callback
-    let mut fetch_opts = git2::FetchOptions::default();
-    fetch_opts.remote_callbacks(cbs);
+        // set up the fetch to use the auth callback
+        let mut fetch_opts = git2::FetchOptions::default();
+        fetch_opts.remote_callbacks(cbs);
 
-    debug!("(git pull): fetching {}/{}", remote, branch);
-    upstream
-        .fetch(&[branch], Some(&mut fetch_opts), None)
-        .unwrap();
+        debug!("(git pull): fetching {}/{}", remote, branch);
+
+        // need to make a copy of the upstream object, otherwise
+        let mut upstream = upstream.clone();
+        upstream.fetch(&[branch], Some(&mut fetch_opts), None).chain_err(|| "failed to fetch remote")?;
+        Ok(())
+    })?;
     Ok(())
-}
-
-/// A convenience type for results. Short for `Result<T, RepoError>`
-type RepoResult<T> = result::Result<T, RepoError>;
-
-#[derive(Debug, PartialEq)]
-pub struct RepoError {
-    /// A mapping of which error occurred for each branch. These usually will be identical,
-    /// but there can be different errors for each branch.
-    pub error_map: HashMap<String, ErrorType>,
-
-    /// A human-readable string representation of the error, useful for debugging.
-    pub details: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ErrorType {
-    InvalidRepo,
-    NetworkError,
-    MergeError,
-    Unknown,
-}
-
-impl RepoError {
-    fn new(error_map: HashMap<String, ErrorType>) -> RepoError {
-        let mut error = RepoError {
-            error_map,
-            details: String::new(),
-        };
-        error.details = format!("{:?}", error.error_map);
-        error
-    }
-}
-
-impl Display for RepoError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.error_map)
-    }
-}
-
-impl Error for RepoError {
-    fn description(&self) -> &str {
-        &self.details
-    }
 }
 
 #[cfg(test)]
@@ -157,18 +225,7 @@ mod test {
         let path = PathBuf::from("/");
         let mut branches = HashMap::new();
         branches.insert(String::from("master"), true);
-
-        match update_repo(&path, "origin", &branches) {
-            Ok(_) => panic!("Woops!"),
-            Err(e) => assert!(e.error_map["master"] == ErrorType::InvalidRepo),
-        }
-    }
-
-    #[test]
-    fn test_git_credentials() {
-        let url = "git@github.com:afnanenayet/gitup.git";
-        let creds = git_credentials_callback(url, None, git2::CredentialType::SSH_KEY);
-        assert!(creds.is_ok());
+        assert!(update_repo(&path, "origin", &branches).is_err());
     }
 
     // Note: method this test fixes is not working and will time out
