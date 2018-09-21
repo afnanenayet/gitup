@@ -1,12 +1,13 @@
+use errors::*;
 use git2;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::env;
+use std::path::PathBuf;
 use std::string::String;
-use errors::*;
 
 pub fn with_auth<T, F>(url: &str, cfg: &git2::Config, mut f: F) -> Result<T>
-where F: FnMut(&mut git2::Credentials) -> Result<T>,
+where
+    F: FnMut(&mut git2::Credentials) -> Result<T>,
 {
     let mut cred_helper = git2::CredentialHelper::new(url);
     cred_helper.config(cfg);
@@ -23,7 +24,9 @@ where F: FnMut(&mut git2::Credentials) -> Result<T>,
         if allowed.contains(git2::CredentialType::USERNAME) {
             debug_assert!(username.is_none());
             ssh_uname_requested = true;
-            return Err(git2::Error::from_str("Will attempt to authenticate with usernames later"));
+            return Err(git2::Error::from_str(
+                "Will attempt to authenticate with usernames later",
+            ));
         }
 
         if allowed.contains(git2::CredentialType::SSH_KEY) && !tried_ssh_key {
@@ -142,11 +145,7 @@ where F: FnMut(&mut git2::Credentials) -> Result<T>,
 /// Update a repository given the path to the repo and the desired branch to update.
 /// The branches hashmap contains a mapping of branches to whether each branch should
 /// have any uncommitted work stashed before pulling.
-pub fn update_repo(
-    path: &PathBuf,
-    remote: &str,
-    branches: &HashMap<String, bool>,
-) -> Result<()> {
+pub fn update_repo(path: &PathBuf, remote: &str, branches: &HashMap<String, bool>) -> Result<()> {
     // Can't update something that isn't a repo
     if !is_valid_repo(path) {
         bail!(
@@ -179,10 +178,16 @@ fn is_valid_repo(path: &PathBuf) -> bool {
 /// and popped after the git repository is updated.
 fn git_pull(path: &PathBuf, remote: &str, branch: &str, _stash: bool) -> Result<()> {
     // set up all of the config stuff
-    let repo = git2::Repository::open(path).chain_err(|| "could not open git repo at supplied path")?;
-    let upstream = repo.find_remote(remote).chain_err(|| "failed to find remote for git repo")?;
-    let url = upstream.url().chain_err(|| "could not retrieve remote URL")?; 
-    let git_config = git2::Config::open_default().chain_err(|| "could not retrieve any git config")?;
+    let repo =
+        git2::Repository::open(path).chain_err(|| "could not open git repo at supplied path")?;
+    let upstream = repo
+        .find_remote(remote)
+        .chain_err(|| "failed to find remote for git repo")?;
+    let url = upstream
+        .url()
+        .chain_err(|| "could not retrieve remote URL")?;
+    let git_config =
+        git2::Config::open_default().chain_err(|| "could not retrieve any git config")?;
 
     with_auth(url, &git_config, |f| {
         // set up authentication callbacks so that credentials can be resolved
@@ -197,7 +202,9 @@ fn git_pull(path: &PathBuf, remote: &str, branch: &str, _stash: bool) -> Result<
 
         // need to make a copy of the upstream object, otherwise
         let mut upstream = upstream.clone();
-        upstream.fetch(&[branch], Some(&mut fetch_opts), None).chain_err(|| "failed to fetch remote")?;
+        upstream
+            .fetch(&[branch], Some(&mut fetch_opts), None)
+            .chain_err(|| "failed to fetch remote")?;
         Ok(())
     })?;
     Ok(())

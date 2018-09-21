@@ -31,7 +31,7 @@ pub use errors::*;
 
 quick_main!(run);
 
-fn run() -> Result<()>{
+fn run() -> Result<()> {
     env_logger::init();
 
     let path = PathBuf::from(".");
