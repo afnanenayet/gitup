@@ -5,7 +5,7 @@ use std::env;
 use std::path::PathBuf;
 use std::string::String;
 
-pub fn with_auth<T, F>(url: &str, cfg: &git2::Config, mut f: F) -> Result<T>
+fn with_auth<T, F>(url: &str, cfg: &git2::Config, mut f: F) -> Result<T>
 where
     F: FnMut(&mut git2::Credentials) -> Result<T>,
 {
