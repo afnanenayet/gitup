@@ -167,10 +167,7 @@ pub fn update_repo(path: &PathBuf, remote: &str, branches: &HashMap<String, bool
 /// Check whether a given path is a valid git repository that can be accessed by `libgit` (via the
 /// `git2` crate.
 fn is_valid_repo(path: &PathBuf) -> bool {
-    match git2::Repository::open(path) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    git2::Repository::open(path).is_ok()
 }
 
 /// Given a valid git repository, pull for a particular branch. If
