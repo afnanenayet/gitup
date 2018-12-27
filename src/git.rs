@@ -1,4 +1,4 @@
-use errors::*;
+use crate::errors::*;
 use git2;
 use std::collections::HashMap;
 use std::env;

@@ -12,7 +12,7 @@ mod git;
 mod proc;
 mod tui;
 
-use git::update_repo;
+use crate::git::update_repo;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -27,7 +27,7 @@ mod errors {
     error_chain! {}
 }
 
-pub use errors::*;
+pub use crate::errors::*;
 
 quick_main!(run);
 
