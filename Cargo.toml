@@ -2,10 +2,11 @@
 name = "gitup"
 version = "0.1.0"
 authors = ["Afnan Enayet <afnan.enayet@gmail.com>"]
+edition = "2018"
 
 [dependencies]
-git2 = "0.7"
+git2 = "0.8"
 clap = "2.32"
-log = "0.4.5"
-env_logger = "0.5.13"
+log = "0.4.6"
+env_logger = "0.6.0"
 error-chain = "0.12.0"
